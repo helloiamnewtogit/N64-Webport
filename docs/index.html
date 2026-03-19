@@ -1,0 +1,1598 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>N64 Wasm</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="keywords" content="N64 Emulator, N64 JavaScript Emulator, WebAssembly, HTML5, Nintendo 64">
+    <meta charset="UTF-8">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/rivets/0.9.6/rivets.bundled.min.js"></script>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/css/toastr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.2/dist/FileSaver.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.0/nipplejs.min.js"></script>
+    <script>
+        // This check needs to be at the top in order to avoid the flash when the theme is swapped.
+        // If we find the user's system settings theme we default to that
+        // The attribute is applied to the document's top most element
+        function getSystemDarkMode(){
+            return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        }
+
+        const darkMode = localStorage.getItem('n64wasm-darkMode');
+        if ((darkMode !== null ? darkMode === "true" : getSystemDarkMode())) {
+            document.documentElement.dataset.darkmode = true;
+        }
+    </script>
+    <style>
+        :root {
+            --bg-main: #f4efe5;
+            --bg-panel: rgba(255, 250, 243, 0.88);
+            --bg-panel-strong: rgba(255, 247, 237, 0.96);
+            --bg-soft: rgba(143, 85, 35, 0.08);
+            --text-main: #231b17;
+            --text-muted: #66554b;
+            --line: rgba(73, 45, 24, 0.14);
+            --accent: #d45a2b;
+            --accent-strong: #9f2f1e;
+            --accent-cool: #245f73;
+            --success: #2f8f63;
+            --shadow: 0 30px 80px rgba(61, 34, 14, 0.14);
+        }
+
+        html,
+        body {
+            min-height: 100%;
+        }
+
+        body {
+            margin: 0;
+            color: var(--text-main);
+            font-family: "IBM Plex Sans", sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(222, 121, 40, 0.22), transparent 28%),
+                radial-gradient(circle at top right, rgba(43, 119, 146, 0.16), transparent 24%),
+                linear-gradient(180deg, #fbf6ee 0%, #efe4d4 52%, #e8dccd 100%);
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        h5 {
+            font-family: "Space Grotesk", sans-serif;
+            letter-spacing: -0.03em;
+        }
+
+        a {
+            color: inherit;
+        }
+
+        .app-shell {
+            max-width: 1380px;
+            margin: 0 auto;
+            padding: 32px 20px 56px;
+        }
+
+        .hero-panel {
+            position: relative;
+            overflow: hidden;
+            padding: 28px 30px;
+            border: 1px solid var(--line);
+            border-radius: 28px;
+            background: linear-gradient(140deg, rgba(255, 248, 239, 0.96), rgba(243, 232, 218, 0.92));
+            box-shadow: var(--shadow);
+            margin-bottom: 24px;
+        }
+
+        .hero-panel::after {
+            content: "";
+            position: absolute;
+            inset: auto -8% -40% auto;
+            width: 320px;
+            height: 320px;
+            background: radial-gradient(circle, rgba(36, 95, 115, 0.18), transparent 68%);
+            pointer-events: none;
+        }
+
+        .hero-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 12px;
+            border-radius: 999px;
+            background: rgba(36, 95, 115, 0.09);
+            color: var(--accent-cool);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .hero-title {
+            margin: 16px 0 10px;
+            font-size: clamp(2.5rem, 6vw, 4.6rem);
+            line-height: 0.95;
+        }
+
+        .hero-title span {
+            color: var(--accent);
+        }
+
+        .hero-copy {
+            max-width: 720px;
+            margin: 0;
+            color: var(--text-muted);
+            font-size: 1.04rem;
+            line-height: 1.65;
+        }
+
+        .hero-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        .hero-pill {
+            padding: 9px 13px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.64);
+            font-size: 0.92rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .workspace-grid {
+            display: grid;
+            grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+            gap: 24px;
+            align-items: start;
+        }
+
+        .surface-card {
+            border: 1px solid var(--line);
+            border-radius: 28px;
+            background: var(--bg-panel);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(12px);
+        }
+
+        .control-shell {
+            padding: 24px;
+        }
+
+        .control-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: flex-start;
+            margin-bottom: 18px;
+        }
+
+        .control-heading {
+            margin: 0;
+            font-size: 1.35rem;
+        }
+
+        .control-subheading {
+            margin: 6px 0 0;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        .status-badge {
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(212, 90, 43, 0.1);
+            color: var(--accent-strong);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .button-cluster {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .surface-section {
+            padding: 18px;
+            border: 1px solid var(--line);
+            border-radius: 22px;
+            background: var(--bg-panel-strong);
+            margin-top: 18px;
+        }
+
+        .surface-section h5,
+        .surface-section h6 {
+            margin-bottom: 10px;
+        }
+
+        .surface-caption {
+            margin: 0 0 14px;
+            color: var(--text-muted);
+            font-size: 0.92rem;
+        }
+
+        .dropzone {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            min-height: 180px;
+            border: 2px dashed rgba(36, 95, 115, 0.35);
+            border-radius: 24px;
+            background:
+                linear-gradient(135deg, rgba(36, 95, 115, 0.08), rgba(212, 90, 43, 0.08));
+            color: var(--accent-cool);
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .viewer-shell {
+            padding: 22px;
+        }
+
+        .viewer-topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+
+        .viewer-title {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+
+        .viewer-note {
+            margin: 4px 0 0;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        .canvas-stage {
+            position: relative;
+            min-height: 520px;
+            border-radius: 24px;
+            border: 1px solid rgba(36, 95, 115, 0.14);
+            background:
+                radial-gradient(circle at top, rgba(36, 95, 115, 0.12), transparent 45%),
+                linear-gradient(180deg, rgba(25, 34, 40, 0.96), rgba(10, 13, 16, 0.98));
+            overflow: hidden;
+        }
+
+        .viewer-placeholder {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 14px;
+            min-height: 520px;
+            padding: 42px;
+            color: rgba(244, 237, 229, 0.95);
+        }
+
+        .viewer-placeholder h3 {
+            margin: 0;
+            font-size: clamp(2rem, 4vw, 3.2rem);
+            max-width: 420px;
+        }
+
+        .viewer-placeholder p {
+            max-width: 480px;
+            margin: 0;
+            line-height: 1.7;
+            color: rgba(244, 237, 229, 0.74);
+        }
+
+        .feature-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 6px;
+        }
+
+        .feature-chip {
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        #canvasDiv {
+            display: none;
+            width: 100%;
+            padding: 18px;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            max-width: 100%;
+            margin: 0 auto;
+            border-radius: 18px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+        }
+
+        .viewer-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 14px;
+            margin-top: 18px;
+        }
+
+        .viewer-footer-copy {
+            color: var(--text-muted);
+            font-size: 0.92rem;
+        }
+
+        .github-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            padding: 11px 14px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.75);
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        .github-link:hover {
+            text-decoration: none;
+        }
+
+        .github-logo {
+            display: inline-flex;
+        }
+
+        .githubSvg {
+            width: 18px;
+            height: 18px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .btn {
+            border-radius: 999px;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            padding: 0.72rem 1.1rem;
+            border-width: 0;
+            box-shadow: none !important;
+        }
+
+        .btn-primary,
+        .btn-primary:focus,
+        .btn-primary:hover,
+        .btn-primary:active {
+            color: #fff;
+            background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+        }
+
+        .btn-secondary,
+        .btn-secondary:focus,
+        .btn-secondary:hover,
+        .btn-secondary:active {
+            color: var(--text-main);
+            background: rgba(35, 27, 23, 0.08);
+        }
+
+        .btn-success,
+        .btn-success:focus,
+        .btn-success:hover,
+        .btn-success:active {
+            color: #fff;
+            background: linear-gradient(135deg, #3ca572, var(--success));
+        }
+
+        .form-control,
+        .custom-select {
+            border-radius: 16px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.86);
+            color: var(--text-main);
+            min-height: 48px;
+        }
+
+        .form-control:focus {
+            border-color: rgba(36, 95, 115, 0.45);
+            box-shadow: 0 0 0 0.2rem rgba(36, 95, 115, 0.12);
+        }
+
+        .alert {
+            border: 0;
+            border-radius: 18px;
+        }
+
+        .alert-info {
+            background: rgba(36, 95, 115, 0.12);
+            color: #214a58;
+        }
+
+        .alert-danger {
+            background: rgba(159, 47, 30, 0.1);
+            color: #8e281a;
+        }
+
+        .table td,
+        .table th {
+            padding: 5px;
+        }
+
+        .regularTable td,
+        .regularTable th {
+            padding: 0;
+            vertical-align: top;
+            border-top: 0px;
+        }
+
+        .start-z-button {
+            background-color: rgb(189, 174, 173);
+        }
+
+        .b-a-button {
+            background-color: rgb(199, 199, 230);
+        }
+
+        .buttonhold {
+            background-color: lightsalmon;
+        }
+        
+        .nav-tabs .nav-item.show .nav-link,
+        .nav-tabs .nav-link.active {
+            color: #007bff;
+        }
+        .github-logo {
+            display:inline-block;
+            padding-left:10px;
+        }
+        .github-link {
+            color:black;
+            font-weight: 600;
+        }
+        .github-link:hover {
+            color:black;
+        }
+        .githubSvg {
+            height:21px;
+            width:21px;
+            color: black;
+        }
+        .touchsurface {
+            color: rgba(255, 255, 255, 0.58);
+            position: absolute;
+            width: 100%;
+            height: 800px;
+        }
+
+        html[data-darkmode="true"] body {
+            --bg-main: #0f1317;
+            --bg-panel: rgba(21, 26, 31, 0.86);
+            --bg-panel-strong: rgba(15, 20, 24, 0.96);
+            --bg-soft: rgba(212, 90, 43, 0.08);
+            --text-main: #f6eee4;
+            --text-muted: #b8a99a;
+            --line: rgba(255, 234, 211, 0.12);
+            --shadow: 0 30px 80px rgba(0, 0, 0, 0.34);
+            background:
+                radial-gradient(circle at top left, rgba(212, 90, 43, 0.18), transparent 28%),
+                radial-gradient(circle at top right, rgba(36, 95, 115, 0.18), transparent 26%),
+                linear-gradient(180deg, #10161b 0%, #0d1013 100%);
+        }
+
+        html[data-darkmode="true"] .hero-panel,
+        html[data-darkmode="true"] .surface-card,
+        html[data-darkmode="true"] .surface-section,
+        html[data-darkmode="true"] .github-link,
+        html[data-darkmode="true"] .form-control,
+        html[data-darkmode="true"] .form-control:focus,
+        html[data-darkmode="true"] .form-control:disabled,
+        html[data-darkmode="true"] .dropdown-menu,
+        html[data-darkmode="true"] .modal-content {
+            color: var(--text-main);
+            background: rgba(18, 22, 27, 0.96);
+        }
+
+        html[data-darkmode="true"] .hero-pill,
+        html[data-darkmode="true"] .status-badge {
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        html[data-darkmode="true"] .dropzone {
+            color: #90cad9;
+            border-color: rgba(144, 202, 217, 0.28);
+            background: linear-gradient(135deg, rgba(36, 95, 115, 0.16), rgba(212, 90, 43, 0.12));
+        }
+
+        html[data-darkmode="true"] .alert-info {
+            color: #c5e7f0;
+            background: rgba(36, 95, 115, 0.2);
+        }
+
+        html[data-darkmode="true"] .alert-danger {
+            color: #ffc5bb;
+            background: rgba(159, 47, 30, 0.18);
+        }
+
+        html[data-darkmode="true"] #menuDiv {
+            color: #0f1317;
+        }
+
+        html[data-darkmode="true"] .start-z-button {
+            color: white;
+            background-color: rgb(42, 42, 42);
+        }
+
+        html[data-darkmode="true"] .b-a-button {
+            color: white;
+            background-color: rgb(80, 80, 80);
+        }
+
+        html[data-darkmode="true"] .touchsurface,
+        html[data-darkmode="true"] .nav-link.active:hover {
+            color: rgb(72, 72, 72);
+            background-color: rgb(20, 20, 20);
+        }
+
+        html[data-darkmode="true"] .buttonhold {
+            background-color: darkslategray;
+        }
+
+        @media (max-width: 991px) {
+            .workspace-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .app-shell {
+                padding: 20px 14px 42px;
+            }
+
+            .hero-panel,
+            .control-shell,
+            .viewer-shell {
+                padding: 20px;
+            }
+
+            .viewer-placeholder {
+                min-height: 340px;
+                padding: 28px;
+            }
+
+            .canvas-stage {
+                min-height: 340px;
+            }
+        }
+
+        @media (max-width: 575px) {
+            .button-cluster {
+                justify-content: stretch;
+            }
+
+            .button-cluster .btn,
+            .button-cluster .btn-group {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-shell">
+        <section class="hero-panel">
+            <div class="hero-kicker">Chrome-first WebAssembly runtime</div>
+            <h1 class="hero-title">Ultimate <span>N64</span> Online Emu</h1>
+            <p class="hero-copy">
+                A browser-focused Nintendo 64 runtime built on the existing wasm foundation, tuned for Chrome stability,
+                lower overhead, and a cleaner front-end shell.
+            </p>
+            <div class="hero-meta">
+                <div class="hero-pill">WebAssembly + WebGL2</div>
+                <div class="hero-pill">Save states and SRAM</div>
+                <div class="hero-pill">Gamepad, keyboard, mobile controls</div>
+                <div class="hero-pill">Performance-first integration path</div>
+            </div>
+        </section>
+
+        <div class="workspace-grid">
+            <section id="maindiv" class="surface-card control-shell text-center">
+                <div class="control-header text-left">
+                    <div>
+                        <h2 class="control-heading">Control Deck</h2>
+                        <p class="control-subheading">Load a ROM, manage saves, tune controls, and launch the emulator.</p>
+                    </div>
+                    <div class="status-badge">Ready</div>
+                </div>
+                <div id="topPanel" style="display: none;">
+
+                    <!-- BEFORE LOAD -->
+                    <div rv-if="data.beforeEmulatorStarted">
+                        <div class="button-cluster mt-4">
+                            <button id="btnPlayGame" class="btn btn-primary" onclick="myClass.loadRom();" rv-if="data.hasRoms"
+                                rv-disabled="data.moduleInitializing">Play Game</button>
+                            <button id="btnUploadRom" class="btn btn-primary" onclick="myApp.uploadBrowse()"
+                                    rv-disabled="data.moduleInitializing">Browse</button>
+                            <button type="button" class="btn btn-secondary" id="btnRemap" onclick="myApp.showRemapModal()">
+                                Remap Buttons
+                            </button>
+                            <span rv-if="data.showLogin">
+                                <button class="btn btn-secondary" rv-if="data.loggedIn | ev '==false'"
+                                    onclick="myApp.loginModal()">Login</button>
+                                <button class="btn btn-secondary" rv-if="data.loggedIn | ev '==true'"  
+                                    onclick="myApp.logout()">Logout</button>
+                            </span>
+                        </div>
+
+                        <div class="surface-section" rv-if="data.settings.SHOWADVANCED">
+                            <div class="form-check" style="margin: 0;">
+                                <label class="form-check-label">
+                                    <input type="checkbox" class="form-check-input" rv-checked="data.chkAdvanced" rv-disabled="data.moduleInitializing">
+                                    Advanced file options
+                                </label>
+                            </div>
+
+                            <div rv-if="data.chkAdvanced" class="mt-3">
+                                <h5>Import saves</h5>
+                                <p class="surface-caption">Load SRAM/EEP/FLA files before boot when a game needs existing progress.</p>
+                                <button id="btnUploadEep" class="btn btn-secondary mt-2" onclick="myApp.uploadEepBrowse()">
+                                    Import Save File (EEP)</button>
+                                <div rv-if="data.eepName | ev_string '.length > 0'">
+                                    { data.eepName }
+                                </div>
+
+                                <button id="btnUploadSra" class="btn btn-secondary mt-3" onclick="myApp.uploadSraBrowse()">
+                                    Import Save File (SRA)</button>
+                                <div rv-if="data.sraName | ev_string '.length > 0'">
+                                    { data.sraName }
+                                </div>
+
+                                <button id="btnUploadFla" class="btn btn-secondary mt-3" onclick="myApp.uploadFlaBrowse()">
+                                    Import Save File (FLA)</button>
+                                <div rv-if="data.flaName | ev_string '.length > 0'">
+                                    { data.flaName }
+                                </div>
+                            </div>
+                        </div>
+
+                        <input id="file-upload-eep" type="file" />
+                        <input id="file-upload-sra" type="file" />
+                        <input id="file-upload-fla" type="file" />
+                        <input id="file-upload" type="file" />
+
+                        <div class="surface-section" rv-if="data.hasRoms">
+                            <h5>Available ROMs</h5>
+                            <p class="surface-caption">Select a hosted ROM from the configured list or browse for one manually.</p>
+                            <div class="form-group mb-0">
+                                <select class="form-control" id="romselect">
+                                    <option rv-each-rom="data.romList" rv-value="rom.url">{rom.title}</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="dbSaveStates" class="surface-section" rv-if="data.loggedIn | ev '==true'">
+                            <h5>Cloud Save States</h5>
+                            <p class="surface-caption">Resume a saved session before the emulator boots.</p>
+                            <button id="btnLoadRomAndSaveState" class="btn btn-primary mb-3" onclick="myApp.loadRomAndSavestate()"
+                                rv-disabled="data.moduleInitializing">Load Savestate</button>
+                            <div class="form-group mb-0">
+                                <select class="form-control" id="savestateSelect">
+                                    <option rv-each-item="data.n64SaveStates" rv-value="item.Name">{item.Name}</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="surface-section" rv-if="data.iosShowWarning">
+                            <div class="alert alert-info mb-0" role="alert">
+                                <b>iOS note:</b> On iOS 16 and above, Safari can run faster if you disable
+                                <code>GPU Process: WebGL</code> in experimental features and restart Safari.
+                            </div>
+                        </div>
+
+                        <div class="surface-section">
+                            <div id="dropArea" class="dropzone">
+                                Drag and drop a ROM here
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AFTER LOAD -->
+                    <div rv-hide="data.beforeEmulatorStarted">
+                        <div class="button-cluster mt-2">
+                            <button class="btn btn-primary" onclick="myApp.newRom()">New Rom</button>
+                            <div class="btn-group" rv-if="data.settings.SHOWADVANCED">
+                                <button type="button" class="btn btn-secondary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                                    Advanced
+                                </button>
+                                <div class="dropdown-menu">
+                                    <a class="dropdown-item" onclick="myApp.exportEep()" style="cursor: pointer;">Export Save (EEP)</a>
+                                    <a class="dropdown-item" onclick="myApp.exportSra()" style="cursor: pointer;">Export Save (SRA)</a>
+                                    <a class="dropdown-item" onclick="myApp.exportFla()" style="cursor: pointer;">Export Save (FLA)</a>
+                                </div>
+                            </div>
+                            <div class="btn-group" rv-if="data.settings.SHOWOPTIONS">
+                                <button type="button" class="btn btn-secondary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                                    Options
+                                </button>
+                                <div class="dropdown-menu">
+                                    <a class="dropdown-item" onclick="myApp.reset()" style="cursor: pointer;">Reset</a>
+                                </div>
+                            </div>
+                            <span rv-if="data.showDoubleSpeed">
+                                <button class="btn btn-success" rv-if="data.doubleSpeed | ev '==true'"
+                                    onclick="myApp.toggleDoubleSpeed()">2x Speed</button>
+                                <button class="btn btn-primary" rv-if="data.doubleSpeed | ev '==false'"
+                                    onclick="myApp.toggleDoubleSpeed()">2x Speed</button>
+                            </span>
+                        </div>
+
+                        <div class="button-cluster mt-3">
+                            <button rv-if="data.loggedIn | ev '==true'" class="btn btn-primary"
+                                onclick="myApp.saveCloud()">Save Cloud</button>
+                            <button rv-if="data.loggedIn | ev '==true'" class="btn btn-secondary"
+                                onclick="myApp.loadCloud()" rv-disabled="data.noCloudSave">Load Cloud</button>
+                            <button rv-if="data.loggedIn | ev '==false'" class="btn btn-primary"
+                                onclick="myApp.saveStateLocal()">Save State</button>
+                            <button rv-if="data.loggedIn | ev '==false'" class="btn btn-secondary"
+                                onclick="myApp.loadStateLocal()" rv-disabled="data.noLocalSave">Load State</button>
+                            <button class="btn btn-secondary" onclick="myApp.zoomOut()">Zoom Out</button>
+                            <button class="btn btn-secondary" onclick="myApp.zoomIn()">Zoom In</button>
+                            <button class="btn btn-secondary" onclick="myApp.fullscreen()">Full Screen</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="lblErrorOuter" style="display: none;">
+                    <div rv-if="data.lblError | ev_string '.length > 0'"
+                        class="alert alert-danger mt-4 mb-0" id="lblError" role="alert" 
+                        rv-html="data.lblError">
+                    </div>
+                </div>
+
+                <div id="mydiv" class="mt-4"></div>
+            </section>
+
+            <section id="middleDiv" class="surface-card viewer-shell text-center">
+                <div class="viewer-topbar text-left">
+                    <div>
+                        <h2 class="viewer-title">Playfield</h2>
+                        <p class="viewer-note">The live canvas stays here once the wasm core starts. Until then, this panel stays warm and ready.</p>
+                    </div>
+                    <div class="status-badge">WebGL2</div>
+                </div>
+
+                <div class="canvas-stage">
+                    <div class="viewer-placeholder" rv-if="data.beforeEmulatorStarted">
+                        <h3>Browser N64, tuned for a cleaner launch path.</h3>
+                        <p>
+                            Load a ROM from the left panel, then the canvas will take over this stage. This shell keeps the app
+                            organized around performance, compatibility, and a much better first impression.
+                        </p>
+                        <div class="feature-list">
+                            <div class="feature-chip">Gamepads</div>
+                            <div class="feature-chip">Cloud and local saves</div>
+                            <div class="feature-chip">Mobile controls</div>
+                            <div class="feature-chip">Save import/export</div>
+                            <div class="feature-chip">Fullscreen and zoom</div>
+                        </div>
+                    </div>
+
+                    <!-- ID has to be canvas it's hardcoded in the EM generated .js -->
+                    <div id="canvasDiv">
+                        <canvas id="canvas"></canvas>
+                    </div>
+                </div>
+
+                <div id="bottomPanel" rv-hide="data.beforeEmulatorStarted" class="mt-3">
+                    <!-- <div>{ data.audioSkipCount}</div> -->
+                </div>
+
+                <div class="viewer-footer">
+                    <div class="viewer-footer-copy">Built from the existing wasm runtime, with the UI shell tuned for a cleaner Chrome experience.</div>
+                    <a href="https://github.com/nbarkhina/n64wasm" target="_blank" class="github-link">
+                        View source on GitHub
+                        <div class="github-logo">
+                            <svg viewbox="0 0 98 96" class="githubSvg" width="98" height="96" xmlns="http://www.w3.org/2000/svg">
+                                <path fill-rule="evenodd" clip-rule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z" fill="currentColor"/></svg>
+                        </div>
+                    </a>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- Mobile UX -->
+    <div id="mobileButtons" style="display: none;text-align: center;padding-top: 20px;padding-bottom: 20px;">
+        <div style="margin-bottom: 10px;">
+            <button class="btn btn-primary mt-2 mb-2" onclick="myApp.newRom()" >New Rom</button>
+            <button rv-if="data.loggedIn | ev '==true'" class="btn btn-primary mt-2 mb-2" onclick="myApp.saveCloud()" >Save Cloud</button>
+            <button rv-if="data.loggedIn | ev '==true'" class="btn btn-primary mt-2 mb-2" onclick="myApp.loadCloud()" rv-disabled="data.noCloudSave">Load Cloud</button>
+            <button rv-if="data.loggedIn | ev '==false'" class="btn btn-primary mt-2 mb-2" onclick="myApp.saveStateLocal()" >Save State</button>
+            <button rv-if="data.loggedIn | ev '==false'" class="btn btn-primary mt-2 mb-2" onclick="myApp.loadStateLocal()" rv-disabled="data.noLocalSave" >Load State</button>
+        </div>
+        <span rv-if="data.showDoubleSpeed">
+            <button class="btn btn-success mt-2 mb-2" rv-if="data.doubleSpeed | ev '==true'"
+                onclick="myApp.toggleDoubleSpeed()">2x Speed</button>
+            <button class="btn btn-primary mt-2 mb-2" rv-if="data.doubleSpeed | ev '==false'"
+                onclick="myApp.toggleDoubleSpeed()">2x Speed</button>
+        </span>
+        <button type="button" class="btn btn-primary" onclick="myApp.hideMobileMenu()">
+            Hide
+        </button>
+    </div>
+    <div id="mobileDiv" style="display: none;height: 100%;">
+        <div id="mobileCanvas">
+    
+        </div>
+    
+        <div id="mobileBottomPanel" style="font-size: 36px;height:100%;text-align: center!important;background: white;">
+            <table style="width: 100%;" cellpadding=0 cellspacing=0>
+                <tr>
+                    <td style="border-right: 1px solid rgb(72,72,72);width:50%;">
+                        <div id="mobileStart" class="start-z-button" rv-class-buttonhold="data.inputController.MobileStart">
+                            Start
+                        </div>
+                    </td>
+                    <td>
+                    <div id="mobileSelect" class="start-z-button" rv-class-buttonhold="data.inputController.MobileSelect">
+                        <span rv-if="data.useZasCMobile | ev '==false'">Z</span>
+                        <span rv-if="data.useZasCMobile | ev '==true'">C (Hold)</span>
+                    </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="border-right: 1px solid rgb(72,72,72);">
+                        <div id="mobileB" class="b-a-button" rv-class-buttonhold="data.inputController.MobileB">
+                            B
+                        </div>
+                    </td>
+                    <td>
+                        <div id="mobileA" class="b-a-button" rv-class-buttonhold="data.inputController.MobileA">
+                            A
+                        </div>
+                    </td>
+                </tr>
+            </table>
+            <!-- <div style="color: lightgray;height:100%;" id="divTouchSurface">
+                <div style="padding-top: 20px;height: 800px;" id="startDiv">
+                    << Swipe to Move>>
+                </div>
+            </div> -->
+            <div style="margin-left: auto;margin-right: auto;width: 100%;height: 800px;">
+                <div id="divTouchSurface" class="touchsurface">
+                    <div id="startDiv" style="padding-top: 20px; -webkit-touch-callout: none; -webkit-user-select: none; -khtml-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none;">
+                        Virtual Joystick
+                    </div>
+                </div>
+            </div>
+    
+            <div id="menuDiv"
+                style="opacity: 0.5; background-color: rgba(243,244,244,1);width: 70px;position: absolute; top:0px;left:170px;font-size: 14px;">
+                -MENU-
+            </div>
+    
+    
+        </div>
+    </div>
+
+    <!--  Login Modal -->
+    <div class="modal fade" id="loginModal" tabindex="-1" role="dialog" aria-labelledby="loginModalLabel"
+        aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="loginModalLabel">Login</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" class="form-control" id="txtPassword" autocomplete="off"
+                            rv-value="data.password" onkeydown="" placeholder="Enter Password">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="myApp.loginSubmit()">Submit</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Keymapping Modal -->
+    <div class="modal fade" id="buttonsModal" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Remap Buttons</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body" id="modalMain" style="padding-bottom: 0;">
+                    <ul class="nav nav-tabs" rv-hide="data.remapWait">
+                        <li class="nav-item">
+                            <a class="nav-link" rv-class-active="data.remapPlayer1" style="cursor: pointer;"
+                                onclick="myApp.swapRemap('player1')">Player 1</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" rv-class-active="data.remapOptions" style="cursor: pointer;"
+                                onclick="myApp.swapRemap('options')">Options</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" rv-class-active="data.remapGameshark" style="cursor: pointer;"
+                                onclick="myApp.swapRemap('gameshark')">GameShark</a>
+                        </li>
+                    </ul>
+                    <div rv-if="data.remapPlayer1">
+                        <table class="table" rv-hide="data.remapWait">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Button</th>
+                                    <th scope="col">Keyboard</th>
+                                    <th scope="col">Joypad</th>
+                                    <th scope="col">Remap</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">D-Up</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Up" type="text" class="form-control"
+                                            disabled>
+                                    </td>
+                                    <td>
+                                        <input rv-value="data.remappings.Joy_Mapping_Up" type="text" class="form-control"
+                                            disabled>
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(1)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapJoy(1)"
+                                                        class="btn btn-primary ml-2">Joypad</button>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">D-Down</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Down" type="text" class="form-control"
+                                            disabled>
+                                    </td>
+                                    <td>
+                                        <input rv-value="data.remappings.Joy_Mapping_Down" type="text" class="form-control"
+                                            disabled>
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(2)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapJoy(2)"
+                                                        class="btn btn-primary ml-2">Joypad</button>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">D-Left</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Left" type="text" class="form-control"
+                                            disabled>
+                                    </td>
+                                    <td>
+                                        <input rv-value="data.remappings.Joy_Mapping_Left" type="text" class="form-control"
+                                            disabled>
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(3)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapJoy(3)"
+                                                        class="btn btn-primary ml-2">Joypad</button>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">D-Right</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Right" type="text" class="form-control"
+                                            disabled>
+                                    </td>
+                                    <td>
+                                        <input rv-value="data.remappings.Joy_Mapping_Right" type="text" class="form-control"
+                                            disabled>
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(4)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapJoy(4)"
+                                                        class="btn btn-primary ml-2">Joypad</button>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">A</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Action_A" type="text" class="form-control"
+                                            disabled>
+                                    </td>
+                                    <td>
+                                        <input rv-value="data.remappings.Joy_Mapping_Action_A" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(5)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapJoy(5)"
+                                                        class="btn btn-primary ml-2">Joypad</button>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">B</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Action_B" type="text" class="form-control"
+                                            disabled>
+                                    </td>
+                                    <td>
+                                        <input rv-value="data.remappings.Joy_Mapping_Action_B" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(6)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapJoy(6)"
+                                                        class="btn btn-primary ml-2">Joypad</button>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Start</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Action_Start" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        <input rv-value="data.remappings.Joy_Mapping_Action_Start" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(8)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapJoy(8)"
+                                                        class="btn btn-primary ml-2">Joypad</button>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Z</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Action_Z" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        <input rv-value="data.remappings.Joy_Mapping_Action_Z" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(10)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapJoy(10)"
+                                                        class="btn btn-primary ml-2">Joypad</button>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">L</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Action_L" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        <input rv-value="data.remappings.Joy_Mapping_Action_L" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(11)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapJoy(11)"
+                                                        class="btn btn-primary ml-2">Joypad</button>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">R</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Action_R" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        <input rv-value="data.remappings.Joy_Mapping_Action_R" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(12)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapJoy(12)"
+                                                        class="btn btn-primary ml-2">Joypad</button>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Menu</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Menu" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        <input rv-value="data.remappings.Joy_Mapping_Menu" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(9)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapJoy(9)"
+                                                        class="btn btn-primary ml-2">Joypad</button>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">CUP</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Action_CUP" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(13)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">CDOWN</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Action_CDOWN" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(14)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">CLEFT</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Action_CLEFT" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(15)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">CRIGHT</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Action_CRIGHT" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(16)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">UP</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Action_Analog_Up" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(17)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">DOWN</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Action_Analog_Down" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(18)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">LEFT</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Action_Analog_Left" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(19)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">RIGHT</th>
+                                    <td>
+                                        <input rv-value="data.remappings.Mapping_Action_Analog_Right" type="text"
+                                            class="form-control" disabled>
+                                    </td>
+                                    <td>
+                                        
+                                    </td>
+                                    <td>
+                                        <table class="regularTable">
+                                            <tr>
+                                                <td>
+                                                    <button type="button" onclick="myApp.btnRemapKey(20)"
+                                                        class="btn btn-primary">Key</button>
+                                                </td>
+                                                <td>
+                                                    
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div rv-if="data.remapWait">
+                            <div class="mt-4 mb-4 text-center">
+                                Please press a { data.remapMode }
+                                <br>
+                                <br>
+                                { data.inputController.Key_Last }
+                                <br>
+                            </div>
+                        </div>
+                    </div>
+                    <div rv-if="data.remapOptions">
+                        <div class="mt-4 mb-4">
+                            
+                            <div style="margin-bottom: 10px;">
+                                <div style="margin-left: 3px;">Video Plugin</div>
+                                <div style="margin-left: 20px;margin-top: 3px;">
+                                    <input type="radio" name="videoplugin" id="pluginglide" value="glide" rv-checked="data.pluginTemp">
+                                    <label for="pluginglide">Glide (Best Overall)</label><br>
+                                    <input type="radio" name="videoplugin" id="pluginrice" value="rice" rv-checked="data.pluginTemp">
+                                    <label for="pluginrice">Rice (Better for certain games: Micro Machines, Wipeout)</label><br>
+                                    <input type="radio" name="videoplugin" id="pluginangry" value="angry" rv-checked="data.pluginTemp">
+                                    <label for="pluginangry">Software Renderer (very slow but highly accurate)</label><br>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="form-check-label" style="margin-left: 26px;">
+                                    <input type="checkbox" class="form-check-input" rv-checked="data.disableAudioSyncTemp">
+                                    Vertical Sync (improves refresh rate)
+                                </label>
+                            </div>
+
+                            <div class="mt-2">
+                                <label class="form-check-label" style="margin-left: 26px;">
+                                    <input type="checkbox" class="form-check-input" rv-checked="data.useVBOTemp">
+                                    Use Vertex Buffer Objects (may improve performance)
+                                </label>
+                            </div>
+
+                            <div class="mt-2">
+                                <label class="form-check-label" style="margin-left: 26px;">
+                                    <input type="checkbox" class="form-check-input" name="darkmode" rv-checked="data.darkModeTemp">
+                                    Dark mode
+                                </label>
+                            </div>
+
+                            <div class="mt-2">
+                                <label class="form-check-label" style="margin-left: 26px;">
+                                    <input type="checkbox" class="form-check-input" rv-checked="data.showFPSTemp">
+                                    Show FPS
+                                </label>
+                            </div>
+
+                            <div class="mt-2">
+                                <label class="form-check-label" style="margin-left: 26px;">
+                                    <input type="checkbox" class="form-check-input" rv-checked="data.swapSticksTemp">
+                                    Swap Left and Right Sticks (good for goldeneye)
+                                </label>
+                            </div>
+                            <div class="mt-2">
+                                <label class="form-check-label" style="margin-left: 26px;">
+                                    <input type="checkbox" class="form-check-input" rv-checked="data.mouseModeTemp">
+                                    Mouse Controls (good for starcraft)
+                                </label>
+                            </div>
+                            
+                            <div class="mt-2">
+                                <label class="form-check-label" style="margin-left: 26px;">
+                                    <input type="checkbox" class="form-check-input" rv-checked="data.invert2PTemp">
+                                    Player 2 Invert Y-Axis
+                                </label>
+                            </div>
+                            <div class="mt-2">
+                                <label class="form-check-label" style="margin-left: 26px;">
+                                    <input type="checkbox" class="form-check-input" rv-checked="data.invert3PTemp">
+                                    Player 3 Invert Y-Axis
+                                </label>
+                            </div>
+                            <div class="mt-2">
+                                <label class="form-check-label" style="margin-left: 26px;">
+                                    <input type="checkbox" class="form-check-input" rv-checked="data.invert4PTemp">
+                                    Player 4 Invert Y-Axis
+                                </label>
+                            </div>
+
+                            <div class="mt-2">
+                                <table>
+                                    <tr>
+                                        <td>Mobile</td>
+                                        <td>
+                                            <div>
+                                                <select class="form-control" rv-value="data.settingMobileTemp" id="ddlMobile" style="margin-left: 16px;">
+                                                    <option value="Auto">Auto Detect</option>
+                                                    <option value="ForceMobile">Force Mobile</option>
+                                                    <option value="ForceDesktop">Force Desktop</option>
+                                                </select>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+
+                        </div>
+                    </div>
+                    <div rv-if="data.remapGameshark">
+                        <div class="mt-4 mb-4">
+                            <table class="table" rv-hide="data.remapWait">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Active</th>
+                                        <th scope="col">Name</th>
+                                        <th scope="col">Address</th>
+                                        <th scope="col">Value</th>
+                                        <th scope="col"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr rv-each-cheat="data.cheats">
+                                        <th scope="row">
+                                            <label class="form-check-label" style="margin-left: 26px; margin-top: 5px;">
+                                                <input type="checkbox" class="form-check-input" rv-checked="cheat.active">
+                                                Active
+                                            </label>
+                                        </th>
+                                        <td>
+                                            <input rv-value="cheat.name" type="text" class="form-control" disabled>
+                                        </td>
+                                        <td>
+                                            <input rv-value="cheat.address" type="text" class="form-control" disabled>
+                                        </td>
+                                        <td>
+                                            <input rv-value="cheat.value" type="text" class="form-control" disabled>
+                                        </td>
+                                        <td style="text-align: center;">
+                                            <button type="button" class="btn btn-danger" rv-name="cheat.name" onclick="myApp.deleteCheat(this)">Delete</button>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row">
+                                        </th>
+                                        <td>
+                                            <input rv-value="data.cheatName" type="text" class="form-control">
+                                        </td>
+                                        <td>
+                                            <input rv-value="data.cheatAddress" type="text" class="form-control">
+                                        </td>
+                                        <td>
+                                            <input rv-value="data.cheatValue" type="text" class="form-control">
+                                        </td>
+                                        <td style="text-align: center;">
+                                            <button type="button" class="btn btn-success" onclick="myApp.addCheat()">Add</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding-top: 10px;" rv-hide="data.remapWait">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                    <button type="button" onclick="myApp.restoreDefaultKeymappings()" class="btn btn-primary">Restore Defaults</button>
+                    <button type="button" class="btn btn-primary" onclick="myApp.saveRemap()">Save changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="settings.js?v=1"></script>
+    <script src="romlist.js"></script>
+    <script type="text/javascript">
+        var rando = Math.floor(Math.random() * Math.floor(100000));
+        var script = document.createElement('script');
+        script.src = 'script.js?v=' + rando;
+        document.getElementsByTagName('head')[0].appendChild(script);
+    </script>
+</body>
+
+</html>
